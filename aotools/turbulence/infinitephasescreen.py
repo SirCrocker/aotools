@@ -177,7 +177,7 @@ class PhaseScreen(object):
         # If a seed is here, screen must be repeatable wiht same seed
         self._R = numpy.random.default_rng(self.random_seed)
 
-        self._scrn = phasescreen.ft_phase_screen(
+        self._scrn = phasescreen.ft_sh_phase_screen(
             self.r0, self.stencil_length, self.pixel_scale, self.L0, 1e-10, seed=self._R
         )
 
