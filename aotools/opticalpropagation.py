@@ -8,6 +8,77 @@ of optical proagation
 import numpy
 from . import fouriertransform
 
+
+def bandLimitedAngularSpectrum(inputComplexAmp, wvl, inputSpacing, outputSpacing, z):
+    """
+    Propogates light complex amplitude using an angular spectrum algorithm. The algorithm
+    band limits the propagating signal to ((reduce aliasing and reduce numerical errors))
+
+    Parameters:
+        inputComplexAmp (ndarray): Complex array of input complex amplitude
+        wvl (float): Wavelength of light to propagate
+        inputSpacing (float): The spacing between points on the input array in metres
+        outputSpacing (float): The desired spacing between points on the output array in metres
+        z (float): Distance to propagate in metres
+
+    Returns:
+        ndarray: propagated complex amplitude
+    """
+    
+    # If propagation distance is 0, don't bother 
+    if z==0:
+        return inputComplexAmp
+
+    N_og = inputComplexAmp.shape[0] #Assumes Uin is square and N_og is even.
+    k = 2*numpy.pi/wvl     #optical wavevector
+
+    # We double the sampling windows and pad with 0 
+    # circ conv to linear conv
+    inputComplexAmp = numpy.pad(
+        inputComplexAmp,
+        [(N_og//2, N_og//2), (N_og//2, N_og//2)],
+        constant_values=0
+    )
+
+    N = 2 * N_og
+
+    (x1,y1) = numpy.meshgrid(inputSpacing*numpy.arange(-N/2,N/2),
+                             inputSpacing*numpy.arange(-N/2,N/2))
+    r1sq = (x1**2 + y1**2) + 1e-10
+
+    #Spatial Frequencies (of source plane)
+    df1 = 1. / (N*inputSpacing)
+    fX,fY = numpy.meshgrid(df1*numpy.arange(-N/2,N/2),
+                           df1*numpy.arange(-N/2,N/2))
+    fsq = fX**2 + fY**2
+
+    #Scaling Param
+    mag = float(outputSpacing)/inputSpacing
+
+    #Observation Plane Co-ords
+    x2,y2 = numpy.meshgrid( outputSpacing*numpy.arange(-N/2,N/2),
+                            outputSpacing*numpy.arange(-N/2,N/2) )
+    r2sq = x2**2 + y2**2
+
+    #Quadratic phase factors
+    Q1 = numpy.exp( 1j * k/2. * (1-mag)/z * r1sq) # spatial domain
+
+    Q2 = numpy.exp(-1j * numpy.pi**2 * 2 * z/mag/k*fsq) # transfer function / frequency domain
+
+    Q3 = numpy.exp(1j * k/2. * (mag-1)/(mag*z) * r2sq) # spatial domain
+
+    #Compute propagated field
+    outputComplexAmp = Q3 * fouriertransform.ift2(
+                    Q2 * fouriertransform.ft2(Q1 * inputComplexAmp/mag,inputSpacing), df1)
+
+    # We slice back to the original values
+    sl_b = N_og // 2
+    sl_e = N_og // 2 * 3
+    outputComplexAmp = outputComplexAmp[sl_b:sl_e, sl_b:sl_e]
+
+    return outputComplexAmp
+
+
 def angularSpectrum(inputComplexAmp, wvl, inputSpacing, outputSpacing, z):
     """
     Propogates light complex amplitude using an angular spectrum algorithm
