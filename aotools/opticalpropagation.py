@@ -24,6 +24,21 @@ def bandLimitedAngularSpectrum(inputComplexAmp, wvl, inputSpacing, outputSpacing
     Returns:
         ndarray: propagated complex amplitude
     """
+
+
+    # Band limit auxilary function
+    def rect(array):
+        """Rectangle function.
+
+        Args:
+            array (numpy.array): an array of values
+
+        Returns:
+            numpy.array: 1 where abs(array) <= 0.5 0 otherwise
+        """
+        # we are not setting the value as 0.5 at the borders
+        return numpy.where(abs(array) <= 0.5, 1 ,0) 
+
     
     # If propagation distance is 0, don't bother 
     if z==0:
@@ -65,11 +80,15 @@ def bandLimitedAngularSpectrum(inputComplexAmp, wvl, inputSpacing, outputSpacing
 
     Q2 = numpy.exp(-1j * numpy.pi**2 * 2 * z/mag/k*fsq) # transfer function / frequency domain
 
+    fX_limit = 1 / (numpy.sqrt( numpy.pow(2 * df1 * z, 2) + 1 ) * wvl)
+    fY_limit = fX_limit
+    Q2_BL = Q2 * rect(fX / (2 * fX_limit)) * rect(fY / (2 * fY_limit)) # band limited
+
     Q3 = numpy.exp(1j * k/2. * (mag-1)/(mag*z) * r2sq) # spatial domain
 
     #Compute propagated field
     outputComplexAmp = Q3 * fouriertransform.ift2(
-                    Q2 * fouriertransform.ft2(Q1 * inputComplexAmp/mag,inputSpacing), df1)
+                    Q2_BL * fouriertransform.ft2(Q1 * inputComplexAmp/mag,inputSpacing), df1)
 
     # We slice back to the original values
     sl_b = N_og // 2
