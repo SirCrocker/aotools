@@ -438,9 +438,15 @@ class PhaseScreenSubHarmonic:
             Mar. 2025, doi: 10.1364/AOP.538883.
     """
 
-    def __init__(self, r0, N, delta, L0, l0, FFT=None, seed=None):
+    def __init__(self, r0, N, delta, L0, l0, FFT=None, seed=None, max_scroll_dist : None | float = None):
         self.N = N
         self.N_increased = 3 * N 
+
+        if max_scroll_dist is not None:
+            self.N_increased = int( numpy.ceil( max_scroll_dist / delta * 2 + self.N ) )
+            
+        self.max_scrolling_distance = delta * ( self.N_increased - self.N ) / 2
+
         self._full_phase_screen = phasescreen.ft_sh_phase_screen(
             r0=r0,
             N=self.N_increased,
@@ -451,7 +457,6 @@ class PhaseScreenSubHarmonic:
             seed=seed)
         self._pixel_pitch = delta
         self.scrolled_distance = numpy.array([0, 0], dtype=numpy.float64)
-        self.max_scrolling_distance = delta * ( self.N_increased / 2 - self.N/2 )
 
     def scroll_screen(self, shift_dist_x: float, shift_dist_y: float) -> None:
         """Shift the phase screen by a determined x and y distances.
