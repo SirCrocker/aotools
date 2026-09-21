@@ -440,7 +440,7 @@ class PhaseScreenSubHarmonic:
 
     def __init__(self, r0, N, delta, L0, l0, FFT=None, seed=None):
         self.N = N
-        self.N_increased = 2 * N 
+        self.N_increased = 3 * N 
         self._full_phase_screen = phasescreen.ft_sh_phase_screen(
             r0=r0,
             N=self.N_increased,
@@ -450,9 +450,10 @@ class PhaseScreenSubHarmonic:
             FFT=FFT,
             seed=seed)
         self._pixel_pitch = delta
-        self.shifted_distance = numpy.array([0, 0], dtype=numpy.float64)
+        self.scrolled_distance = numpy.array([0, 0], dtype=numpy.float64)
+        self.max_scrolling_distance = delta * ( self.N_increased / 2 - self.N/2 )
 
-    def shift_screen(self, shift_dist_x: float, shift_dist_y: float) -> None:
+    def scroll_screen(self, shift_dist_x: float, shift_dist_y: float) -> None:
         """Shift the phase screen by a determined x and y distances.
 
         Args:
@@ -463,6 +464,11 @@ class PhaseScreenSubHarmonic:
             None
         """
 
+        if (self.scrolled_distance + numpy.array([shift_dist_x, shift_dist_y])\
+            > self.max_scrolling_distance).any():
+
+            raise ValueError(f"Reached maximum scrollable distance {self.max_scrolling_distance:.2e} m.")
+
         df = 1. / (self.N_increased*self._pixel_pitch)
         fX,fY = numpy.meshgrid(df*numpy.arange(-self.N_increased/2,self.N_increased/2),
                            df*numpy.arange(-self.N_increased/2,self.N_increased/2))
@@ -471,18 +477,27 @@ class PhaseScreenSubHarmonic:
         screen_ft = numpy.fft.ifftshift(numpy.fft.fft2(numpy.fft.fftshift(self._full_phase_screen)))
         shift_x = numpy.exp(-1j * 2 * numpy.pi * shift_dist_x * fX)
         shift_y = numpy.exp(-1j * 2 * numpy.pi * shift_dist_y * fY)
+
+        # Force conjugate symmetry. Otherwise this frequency component has no
+        # corresponding negative frequency to cancel out its imaginary part.
+        # Tim (2026). 2D Fourier shift (https://www.mathworks.com/matlabcentral/fileexchange/23440-2d-fourier-shift), MATLAB Central File Exchange. Retrieved September 21, 2026.
+        
+        if self.N_increased % 2 == 0:
+            shift_x[:, 0] = numpy.real(shift_x[:, 0])
+            shift_y[0, :] = numpy.real(shift_y[0, :])
+    
         shifted_screen = screen_ft * shift_x * shift_y
         del screen_ft
 
         self._full_phase_screen = numpy.real(numpy.fft.ifftshift(numpy.fft.ifft2(numpy.fft.fftshift(shifted_screen))))
-        self.shifted_distance += numpy.array([shift_dist_x, shift_dist_y], dtype=numpy.float64)
+        self.scrolled_distance += numpy.array([shift_dist_x, shift_dist_y], dtype=numpy.float64)
 
 
     @property
     def scrn(self):
         # screen is centered
         _smin = self.N_increased // 2 - self.N // 2
-        _smax = self.N_increased // 2 + self.N // 2 + 1
+        _smax = self.N_increased // 2 + self.N // 2
 
         return self._full_phase_screen[_smin:_smax, _smin:_smax]
 
