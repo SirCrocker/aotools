@@ -11,7 +11,7 @@ import numba
 
 from . import phasescreen, turb
 
-__all__ = ["PhaseScreenVonKarman", "PhaseScreenKolmogorov"]
+__all__ = ["PhaseScreenVonKarman", "PhaseScreenKolmogorov", "PhaseScreenSubHarmonic"]
 
 
 class PhaseScreen(object):
@@ -421,7 +421,70 @@ class PhaseScreenKolmogorov(PhaseScreen):
 
     def __repr__(self):
         return str(self.scrn)
+
+
+class PhaseScreenSubHarmonic:
+    """A representation of infinite phase screen with sub-harmonic\
+    augmentation. The method to extend the phase screen is based\
+    on Section 8 of [1].
+
+    The class is a wrapper on ft_sh_phase_screen with the added\
+    functionality of extending the phase screen an arbitrary length.
+
     
+    [1] C. Peters, V. Cocotos, and A. Forbes, “Structured light in\
+        atmospheric turbulence—a guide to its digital implementation:
+        tutorial,” Adv. Opt. Photon., vol. 17, no. 1, p. 113,\
+            Mar. 2025, doi: 10.1364/AOP.538883.
+    """
+
+    def __init__(self, r0, N, delta, L0, l0, FFT=None, seed=None):
+        self.N = N
+        self.N_increased = 2 * N 
+        self._full_phase_screen = phasescreen.ft_sh_phase_screen(
+            r0=r0,
+            N=self.N_increased,
+            delta=delta,
+            L0=L0,
+            l0=l0,
+            FFT=FFT,
+            seed=seed)
+        self._pixel_pitch = delta
+        self.shifted_distance = numpy.array([0, 0], dtype=numpy.float64)
+
+    def shift_screen(self, shift_dist_x: float, shift_dist_y: float) -> None:
+        """Shift the phase screen by a determined x and y distances.
+
+        Args:
+            shift_dist_x (float): distance to shift the screen on x (horizontal scroll) [m]
+            shift_dist_y (float): distance to shift the screen on y [m]
+
+        Returns:
+            None
+        """
+
+        df = 1. / (self.N_increased*self._pixel_pitch)
+        fX,fY = numpy.meshgrid(df*numpy.arange(-self.N_increased/2,self.N_increased/2),
+                           df*numpy.arange(-self.N_increased/2,self.N_increased/2))
+
+    
+        screen_ft = numpy.fft.ifftshift(numpy.fft.fft2(numpy.fft.fftshift(self._full_phase_screen)))
+        shift_x = numpy.exp(-1j * 2 * numpy.pi * shift_dist_x * fX)
+        shift_y = numpy.exp(-1j * 2 * numpy.pi * shift_dist_y * fY)
+        shifted_screen = screen_ft * shift_x * shift_y
+        del screen_ft
+
+        self._full_phase_screen = numpy.real(numpy.fft.ifftshift(numpy.fft.ifft2(numpy.fft.fftshift(shifted_screen))))
+        self.shifted_distance += numpy.array([shift_dist_x, shift_dist_y], dtype=numpy.float64)
+
+
+    @property
+    def scrn(self):
+        # screen is centered
+        _smin = self.N_increased // 2 - self.N // 2
+        _smax = self.N_increased // 2 + self.N // 2 + 1
+
+        return self._full_phase_screen[_smin:_smax, _smin:_smax]
 
 
 @numba.jit(nopython=True, parallel=True)
