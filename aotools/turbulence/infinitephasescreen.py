@@ -478,7 +478,10 @@ class PhaseScreenSubHarmonic:
         self.N_increased: int = 3 * N 
 
         if max_scroll_dist is not None:
-            self.N_increased = int( numpy.ceil( max_scroll_dist / delta * 2 + self.N ) )
+            self.N_increased = int( numpy.ceil( (max_scroll_dist / delta) * 2 + self.N ) )
+
+            if self.N_increased % 2 != 0:
+                self.N_increased += 1
 
         
         self.max_scrolling_distance: float = delta * ( self.N_increased - self.N ) / 2
