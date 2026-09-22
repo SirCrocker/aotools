@@ -425,12 +425,21 @@ class PhaseScreenKolmogorov(PhaseScreen):
 
 class PhaseScreenSubHarmonic:
     """A representation of infinite phase screen with sub-harmonic\
-    augmentation. The method to extend the phase screen is based\
+    augmentation. The method for the "infinite" phase screen is based\
     on Section 8 of [1].
 
     The class is a wrapper on ft_sh_phase_screen with the added\
     functionality of extending the phase screen an arbitrary length.
 
+    This method relies on the 2D Fourier Shift theorem to scroll through\
+    a phase screen with a size larger than the size returned by the property\
+    .scrn. Thus, this method uses more memory than the others and does not\
+    create new data with each scroll, it just uses the data already available.
+
+    The maximum scrolling distance is given by the property max_scrolling_distance.
+
+    This method allows infinitesimal scrolling in the x (horizontal) and y (vertical)\
+    directions. The scrolling can be positive or negative.
     
     [1] C. Peters, V. Cocotos, and A. Forbes, “Structured light in\
         atmospheric turbulence—a guide to its digital implementation:
@@ -439,13 +448,41 @@ class PhaseScreenSubHarmonic:
     """
 
     def __init__(self, r0, N, delta, L0, l0, FFT=None, seed=None, max_scroll_dist : None | float = None):
-        self.N = N
-        self.N_increased = 3 * N 
+        """
+        Creates a random scrollable phase screen with Von Karman statistics with added
+        sub-harmonics to augment tip-tilt modes.
+        (Schmidt 2010)
+        
+        .. note::
+            The phase screen is returned as a 2d array, with each element representing the phase 
+            change in **radians**. This means that to obtain the physical phase distortion in nanometres, 
+            it must be multiplied by (wavelength / (2*pi)), (where `wavelength` here is the same wavelength
+            in which r0 is given in the function arguments)
+        
+        Args:
+            r0 (float): r0 parameter of scrn in metres
+            N (int): Size of phase scrn in pxls
+            delta (float): size in Metres of each pxl
+            L0 (float): Size of outer-scale in metres
+            l0 (float): inner scale in metres
+            seed (int, optional): seed for random number generator. If provided, 
+                allows for deterministic screens 
+            max_scroll_dist (float, optional): maximum distance we want to be able to scroll in meters. It WILL increase RAM usage.
+        
+        Returns:
+            PhaseScreenSubHarmonic object
+        """
+
+
+        self.N: int = N
+        self.N_increased: int = 3 * N 
 
         if max_scroll_dist is not None:
             self.N_increased = int( numpy.ceil( max_scroll_dist / delta * 2 + self.N ) )
-            
-        self.max_scrolling_distance = delta * ( self.N_increased - self.N ) / 2
+
+        
+        self.max_scrolling_distance: float = delta * ( self.N_increased - self.N ) / 2
+        "Max scroll distance allowed [m]"
 
         self._full_phase_screen = phasescreen.ft_sh_phase_screen(
             r0=r0,
@@ -455,21 +492,26 @@ class PhaseScreenSubHarmonic:
             l0=l0,
             FFT=FFT,
             seed=seed)
-        self._pixel_pitch = delta
+        self._pixel_pitch: float = delta
         self.scrolled_distance = numpy.array([0, 0], dtype=numpy.float64)
 
     def scroll_screen(self, shift_dist_x: float, shift_dist_y: float) -> None:
-        """Shift the phase screen by a determined x and y distances.
+        """Shift the phase screen by a determined x and y distances. Due to using an\
+        enlarged screen from where a smaller one is retrieved, scrolling has a maximum
+        value.
 
         Args:
             shift_dist_x (float): distance to shift the screen on x (horizontal scroll) [m]
             shift_dist_y (float): distance to shift the screen on y [m]
 
+        Raises:
+            ValueError: if the scrolling has gone past the maximum allowed value            
+
         Returns:
             None
         """
 
-        if (self.scrolled_distance + numpy.array([shift_dist_x, shift_dist_y])\
+        if (numpy.abs(self.scrolled_distance + numpy.array([shift_dist_x, shift_dist_y]))\
             > self.max_scrolling_distance).any():
 
             raise ValueError(f"Reached maximum scrollable distance {self.max_scrolling_distance:.2e} m.")
