@@ -208,7 +208,11 @@ class PhaseScreen(object):
         """
         The current phase map held in the PhaseScreen object in radians.
         """
-        return self._scrn[:self.requested_nx_size, :self.requested_nx_size]
+        _smin = self.stencil_length // 2 - self.requested_nx_size // 2
+        _smax = self.stencil_length // 2 + self.requested_nx_size // 2
+        return self._scrn[_smin:_smax, :self.requested_nx_size]
+        
+        # return self._scrn[:self.requested_nx_size, :self.requested_nx_size]
 
 
 class PhaseScreenVonKarman(PhaseScreen):
@@ -278,7 +282,7 @@ class PhaseScreenVonKarman(PhaseScreen):
         self.r0 = r0
         self.L0 = L0
         self.stencil_length_factor = 1
-        self.stencil_length = self.nx_size
+        self.stencil_length = self.nx_size + 20
 
         self.random_seed = random_seed
 
@@ -421,6 +425,144 @@ class PhaseScreenKolmogorov(PhaseScreen):
 
     def __repr__(self):
         return str(self.scrn)
+
+
+class ScrollablePhaseScreenVonKarman(PhaseScreenVonKarman):
+    """A representation of infinite phase screen with sub-harmonic\
+    augmentation. The method for the "infinite" phase screen is based\
+    on Section 8 of [1] and the infinite phase screen from AOTools.
+
+    The class is a wrapper on PhaseScreenVonKamrna with the added\
+    functionality of scrolling the phase screen an arbitrary length.
+
+    This method relies on the 2D Fourier Shift theorem to scroll through\
+    a phase screen with a size larger than the size returned by the property\
+    .scrn. If the scroll is greater than a pixel, then rows are added.
+
+    This method allows infinitesimal scrolling in one direction. The scrolling 
+    can be positive or negative.
+    
+    [1] C. Peters, V. Cocotos, and A. Forbes, “Structured light in\
+        atmospheric turbulence—a guide to its digital implementation:
+        tutorial,” Adv. Opt. Photon., vol. 17, no. 1, p. 113,\
+            Mar. 2025, doi: 10.1364/AOP.538883.
+    """
+
+    def __init__(self, r0, nx_size, pixel_scale, L0, random_seed=None, n_rows=2, extra_added_rows=20):
+        """
+        Creates a random scrollable phase screen with Von Karman statistics with added
+        sub-harmonics to augment tip-tilt modes.
+        (Schmidt 2010)
+        
+        .. note::
+            The phase screen is returned as a 2d array, with each element representing the phase 
+            change in **radians**. This means that to obtain the physical phase distortion in nanometres, 
+            it must be multiplied by (wavelength / (2*pi)), (where `wavelength` here is the same wavelength
+            in which r0 is given in the function arguments)
+        
+        Args:
+            r0 (float): r0 parameter of scrn in metres
+            nx_size (int): Size of phase scrn in pxls
+            pixel_scale (float): size in Metres of each pxl
+            L0 (float): Size of outer-scale in metres
+            seed (int, optional): seed for random number generator. If provided, 
+                allows for deterministic screens 
+            n_columns (int, optional): Number of rows to use to continue screen, default is 2
+            extra_added_rows (int, optional): The bigger phase screen will have this number of extra pixels per side for scrolling. Default is 10 per side.
+        
+        Returns:
+            ScrollablePhaseScreenVonKarman object
+        """
+
+        self.extra_number_of_rows = extra_added_rows
+        self.n_columns = n_rows
+
+        self.requested_nx_size = nx_size
+        self.nx_size = nx_size
+        self.pixel_scale = pixel_scale
+        self.r0 = r0
+        self.L0 = L0
+        self.stencil_length_factor = 1
+        self.stencil_length = self.nx_size + self.extra_number_of_rows
+
+        self.random_seed = random_seed
+
+        self.set_X_coords()
+        self.set_stencil_coords()
+
+        self.calc_seperations()
+        self.make_covmats()
+
+        self.makeAMatrix()
+        self.makeBMatrix()
+        self.make_initial_screen()
+
+        
+        self.max_scrolling_distance: float = self.pixel_scale * self.extra_number_of_rows / 2
+        "Max scroll distance allowed [m]"
+
+        self.scrolled_distance: float = .0
+
+    def scroll_screen(self, shift_dist: float) -> None:
+        """Shift the phase screen by a determined distance. If the distance is greater than
+        the row buffer, extra rows are added.
+
+        Args:
+            shift_dist (float): distance to shift the screen [m].
+
+        Raises:
+            ValueError: if the distance is negative.       
+
+        Returns:
+            None
+        """
+
+        if (numpy.abs(self.scrolled_distance + shift_dist) > self.max_scrolling_distance):
+            print("Entered if")
+            total_dist_to_scroll = self.scrolled_distance + shift_dist
+
+            # we need to add more rows
+            num_rows_to_add = int(numpy.floor(total_dist_to_scroll))
+            
+            # we remove the current shift
+            self.scroll_screen(-1 * self.scrolled_distance)
+
+            for i in range(num_rows_to_add):
+                self.add_row()
+
+            shift_dist = total_dist_to_scroll - self.pixel_scale * num_rows_to_add
+        
+        dfr = 1. / (self.stencil_length * self.pixel_scale)
+        dfc = 1. / (self.nx_size * self.pixel_scale)
+        _, fR = numpy.meshgrid(dfc*numpy.arange(-self.nx_size/2,self.nx_size/2), dfr*numpy.arange(-self.stencil_length/2,self.stencil_length/2))
+
+    
+        screen_ft = numpy.fft.ifftshift(numpy.fft.fft2(numpy.fft.fftshift(self._scrn)))
+        shift_r = numpy.exp(-1j * 2 * numpy.pi * shift_dist * fR)
+
+        # Force conjugate symmetry. Otherwise this frequency component has no
+        # corresponding negative frequency to cancel out its imaginary part.
+        # Tim (2026). 2D Fourier shift (https://www.mathworks.com/matlabcentral/fileexchange/23440-2d-fourier-shift), MATLAB Central File Exchange. Retrieved September 21, 2026.
+        
+        # if self.stencil_length % 2 == 0:
+        #     shift_r[:, 0] = numpy.real(shift_r[:, 0])
+    
+        shifted_screen = screen_ft * shift_r
+        del screen_ft
+
+        self._scrn = numpy.real(numpy.fft.ifftshift(numpy.fft.ifft2(numpy.fft.fftshift(shifted_screen))))
+        self.scrolled_distance += shift_dist
+
+
+    @property
+    def scrn(self):
+        # screen is centered
+        _smin = self.stencil_length // 2 - self.nx_size // 2
+        _smax = self.stencil_length // 2 + self.nx_size // 2
+
+        return self._scrn[_smin:_smax, :self.nx_size]
+
+
 
 
 class PhaseScreenSubHarmonic:
