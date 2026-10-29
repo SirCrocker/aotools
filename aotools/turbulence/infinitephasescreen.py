@@ -517,12 +517,14 @@ class ScrollablePhaseScreenVonKarman(PhaseScreenVonKarman):
             None
         """
 
+        if shift_dist == 0:
+            return
+
         if (numpy.abs(self.scrolled_distance + shift_dist) > self.max_scrolling_distance):
-            print("Entered if")
             total_dist_to_scroll = self.scrolled_distance + shift_dist
 
             # we need to add more rows
-            num_rows_to_add = int(numpy.floor(total_dist_to_scroll))
+            num_rows_to_add = int(numpy.floor(total_dist_to_scroll / self.pixel_scale))
             
             # we remove the current shift
             self.scroll_screen(-1 * self.scrolled_distance)
@@ -531,7 +533,8 @@ class ScrollablePhaseScreenVonKarman(PhaseScreenVonKarman):
                 self.add_row()
 
             shift_dist = total_dist_to_scroll - self.pixel_scale * num_rows_to_add
-        
+
+
         dfr = 1. / (self.stencil_length * self.pixel_scale)
         dfc = 1. / (self.nx_size * self.pixel_scale)
         _, fR = numpy.meshgrid(dfc*numpy.arange(-self.nx_size/2,self.nx_size/2), dfr*numpy.arange(-self.stencil_length/2,self.stencil_length/2))
@@ -544,8 +547,8 @@ class ScrollablePhaseScreenVonKarman(PhaseScreenVonKarman):
         # corresponding negative frequency to cancel out its imaginary part.
         # Tim (2026). 2D Fourier shift (https://www.mathworks.com/matlabcentral/fileexchange/23440-2d-fourier-shift), MATLAB Central File Exchange. Retrieved September 21, 2026.
         
-        # if self.stencil_length % 2 == 0:
-        #     shift_r[:, 0] = numpy.real(shift_r[:, 0])
+        if self.stencil_length % 2 == 0:
+            shift_r[0, :] = numpy.real(shift_r[0, :])
     
         shifted_screen = screen_ft * shift_r
         del screen_ft
