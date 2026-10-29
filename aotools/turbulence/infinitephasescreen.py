@@ -446,9 +446,16 @@ class ScrollablePhaseScreenVonKarman(PhaseScreenVonKarman):
         atmospheric turbulence—a guide to its digital implementation:
         tutorial,” Adv. Opt. Photon., vol. 17, no. 1, p. 113,\
             Mar. 2025, doi: 10.1364/AOP.538883.
+
+
+    Note:
+        Using the 2D fourier shift on the screen introduces some small errors
+        after unshifting/unscrolling. The abs mean error is in the order of 
+        1E-03 with the following statistics: std=8.28E-03 ; avg=7.33E-03
+        The histogram looks like a folded normal distribution. 
     """
 
-    def __init__(self, r0, nx_size, pixel_scale, L0, random_seed=None, n_rows=2, extra_added_rows=20):
+    def __init__(self, r0, nx_size, pixel_scale, L0, random_seed=None, n_rows=2, extra_added_rows=10):
         """
         Creates a random scrollable phase screen with Von Karman statistics with added
         sub-harmonics to augment tip-tilt modes.
@@ -468,7 +475,8 @@ class ScrollablePhaseScreenVonKarman(PhaseScreenVonKarman):
             seed (int, optional): seed for random number generator. If provided, 
                 allows for deterministic screens 
             n_columns (int, optional): Number of rows to use to continue screen, default is 2
-            extra_added_rows (int, optional): The bigger phase screen will have this number of extra pixels per side for scrolling. Default is 10 per side.
+            extra_added_rows (int, optional): The bigger phase screen will have this number 
+                of extra pixels per side for scrolling. Default is 10 per side. This size is duplicated to avoid FFT issues when shifting.
         
         Returns:
             ScrollablePhaseScreenVonKarman object
@@ -483,7 +491,7 @@ class ScrollablePhaseScreenVonKarman(PhaseScreenVonKarman):
         self.r0 = r0
         self.L0 = L0
         self.stencil_length_factor = 1
-        self.stencil_length = self.nx_size + self.extra_number_of_rows
+        self.stencil_length = self.nx_size + self.extra_number_of_rows * 4 # duplicate per side to avoid FFT issues
 
         self.random_seed = random_seed
 
@@ -497,8 +505,7 @@ class ScrollablePhaseScreenVonKarman(PhaseScreenVonKarman):
         self.makeBMatrix()
         self.make_initial_screen()
 
-        
-        self.max_scrolling_distance: float = self.pixel_scale * self.extra_number_of_rows / 2
+        self.max_scrolling_distance: float = self.pixel_scale * self.extra_number_of_rows
         "Max scroll distance allowed [m]"
 
         self.scrolled_distance: float = .0
@@ -549,7 +556,7 @@ class ScrollablePhaseScreenVonKarman(PhaseScreenVonKarman):
         
         if self.stencil_length % 2 == 0:
             shift_r[0, :] = numpy.real(shift_r[0, :])
-    
+
         shifted_screen = screen_ft * shift_r
         del screen_ft
 
