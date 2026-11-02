@@ -572,7 +572,15 @@ class ScrollablePhaseScreenVonKarman(PhaseScreenVonKarman):
 
         return self._scrn[_smin:_smax, :self.nx_size]
 
+    def scale_phasescreen(self, scaling_parameter: float) -> None:
+        """Scale the phase screen by a scaling parameter. This changes
+        the Fried parameter of the screen.
 
+        Args:
+            scaling_parameter (float): value to scale by.
+        """
+
+        self._scrn = self._scrn * scaling_parameter
 
 
 class PhaseScreenSubHarmonic:
