@@ -11,7 +11,7 @@ import numba
 
 from . import phasescreen, turb
 
-__all__ = ["PhaseScreenVonKarman", "PhaseScreenKolmogorov", "PhaseScreenSubHarmonic"]
+__all__ = ["PhaseScreenVonKarman", "PhaseScreenKolmogorov", "PhaseScreenSubHarmonic", "ScrollablePhaseScreenVonKarman"]
 
 
 class PhaseScreen(object):
